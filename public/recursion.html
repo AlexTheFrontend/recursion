@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recursion Visualizer: Stack & Memoization</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f7f7;
+            color: #1f2937;
+        }
+        .container {
+            max-width: 1200px;
+        }
+        .shadow-glow {
+            box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.1), 0 4px 6px -2px rgba(37, 99, 235, 0.05);
+        }
+        .log-entry {
+            transition: all 0.3s ease;
+        }
+        .call-step { background-color: #eff6ff; }
+        .return-step { background-color: #dbeafe; }
+        .base-step { background-color: #fef3c7; }
+        
+        /* Custom scrollbar for log */
+        #factorial-log, #fib-cache-log {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        #factorial-log::-webkit-scrollbar, #fib-cache-log::-webkit-scrollbar {
+            width: 6px;
+        }
+        #factorial-log::-webkit-scrollbar-thumb, #fib-cache-log::-webkit-scrollbar-thumb {
+            background-color: #93c5fd;
+            border-radius: 3px;
+        }
+        
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="container mx-auto">
+        <!-- Header -->
+        <header class="text-center mb-10 p-6 bg-white rounded-xl shadow-lg border-t-4 border-blue-500">
+            <h1 class="text-4xl font-extrabold text-blue-700">Recursion in Code: The Visualizer</h1>
+            <p class="mt-2 text-xl text-gray-600">Explore the Call Stack, Base Case, and Memoization in action.</p>
+        </header>
+
+        <!-- Main Grid for Visualizations -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+
+            <!-- Factorial: Linear Recursion & Call Stack -->
+            <div class="p-6 bg-white rounded-xl shadow-xl border border-gray-100">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">1. Linear Recursion: Factorial ($n!$)</h2>
+                <p class="text-gray-600 mb-4">Visualize the **Call Stack** as the function calls itself until the **Base Case** is met, then returns control up the chain.</p>
+                
+                <div class="flex flex-col sm:flex-row gap-4 mb-6">
+                    <input type="number" id="factorial-input" value="4" min="1" max="10" 
+                           class="w-full sm:w-1/2 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" 
+                           placeholder="Enter N (max 10)">
+                    <button onclick="runFactorialVisualization()" 
+                            class="w-full sm:w-1/2 bg-blue-600 text-white p-3 rounded-lg font-semibold hover:bg-blue-700 transition duration-150 shadow-md">
+                        Run Factorial Calculation
+                    </button>
+                </div>
+
+                <div id="factorial-result" class="p-4 mb-4 text-center bg-gray-100 rounded-lg text-lg font-bold">
+                    Result: N/A
+                </div>
+
+                <h3 class="text-xl font-semibold text-gray-700 mb-3 border-b pb-1">Call Stack Trace (LIFO)</h3>
+                <div id="factorial-log" class="bg-white p-3 rounded-lg border border-gray-200 text-sm space-y-1">
+                    <p class="text-gray-500 italic">Enter a number and click run to see the stack frames.</p>
+                </div>
+            </div>
+
+            <!-- Fibonacci: Branching Recursion & Memoization -->
+            <div class="p-6 bg-white rounded-xl shadow-xl border border-gray-100">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">2. Branching Recursion: Fibonacci ($F(n)$)</h2>
+                <p class="text-gray-600 mb-4">Compare **Naive ($O(2^n)$)** vs. **Memoized ($O(n)$)** solutions. See how Memoization eliminates **overlapping subproblems**.</p>
+                
+                <div class="flex flex-col sm:flex-row gap-4 mb-6">
+                    <input type="number" id="fib-input" value="10" min="1" max="40" 
+                           class="w-full sm:w-1/2 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" 
+                           placeholder="Enter N (max 40)">
+                    <button onclick="runFibonacciVisualization()" 
+                            class="w-full sm:w-1/2 bg-green-600 text-white p-3 rounded-lg font-semibold hover:bg-green-700 transition duration-150 shadow-md">
+                        Compare Performance
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                    <div id="naive-calls" class="p-3 text-center bg-red-100 rounded-lg text-sm font-medium">Naive Calls: 0</div>
+                    <div id="memoized-calls" class="p-3 text-center bg-blue-100 rounded-lg text-sm font-medium">Memoized Calls: 0</div>
+                </div>
+                
+                <div id="fib-result" class="p-4 mb-4 text-center bg-gray-100 rounded-lg text-lg font-bold">
+                    Result: N/A
+                </div>
+
+                <h3 class="text-xl font-semibold text-gray-700 mb-3 border-b pb-1">Memoization Cache Status</h3>
+                <div id="fib-cache-log" class="bg-white p-3 rounded-lg border border-gray-200 text-sm space-y-1">
+                    <p class="text-gray-500 italic">The cache for Memoized Fibonacci will appear here after calculation.</p>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. Factorial Recursion Logic (Call Stack Simulation) ---
+
+        /**
+         * Simulates the recursive calculation of N! and generates a step-by-step trace.
+         * Note: Max input is limited to prevent excessive log entries.
+         */
+        function runFactorialVisualization() {
+            const inputElement = document.getElementById('factorial-input');
+            const n = parseInt(inputElement.value);
+            const logDiv = document.getElementById('factorial-log');
+            const resultDiv = document.getElementById('factorial-result');
+
+            if (isNaN(n) || n < 1 || n > 10) {
+                resultDiv.innerHTML = `<span class="text-red-600">Please enter a number between 1 and 10.</span>`;
+                logDiv.innerHTML = '';
+                return;
+            }
+
+            // Clear previous log
+            logDiv.innerHTML = '';
+
+            const stackTrace = [];
+            
+            // Helper functions to format messages
+            const getIndent = (depth) => '&nbsp;&nbsp;'.repeat(depth * 3);
+            const recursiveStep = (n, depth) => `${getIndent(depth)}<span class="font-bold">CALL:</span> factorial(${n}). Pushing frame. Waiting for factorial(${n-1}).`;
+            const baseCaseHit = (n, depth) => `${getIndent(depth)}<span class="font-bold">BASE CASE:</span> factorial(${n}) returns 1.`;
+            const returnStep = (n, result, depth) => `${getIndent(depth)}<span class="font-bold">RETURN:</span> factorial(${n}) returns ${result}. Popping frame.`;
+
+            let depth = 0;
+            
+            function factorialRecursive(k) {
+                // Pre-call message (Stack Push)
+                stackTrace.push({ type: 'call', n: k, message: recursiveStep(k, depth) });
+                depth++;
+
+                if (k <= 1) { // Base Case
+                    stackTrace.push({ type: 'base', n: k, message: baseCaseHit(k, depth - 1) });
+                    const result = 1;
+                    depth--;
+                    // Post-return message (Stack Pop)
+                    stackTrace.push({ type: 'return', n: k, result: result, message: returnStep(k, result, depth) });
+                    return result;
+                }
+
+                // Recursive Call
+                const subResult = factorialRecursive(k - 1);
+                
+                // Calculation on Return
+                const result = k * subResult;
+
+                depth--;
+                // Post-return message (Stack Pop)
+                stackTrace.push({ type: 'return', n: k, result: result, message: returnStep(k, result, depth) });
+                return result;
+            }
+
+            const finalResult = factorialRecursive(n);
+
+            resultDiv.innerHTML = `Result: ${n}! = <span class="text-blue-600">${finalResult}</span>`;
+
+            // Display the trace in the log
+            stackTrace.forEach((step, index) => {
+                const stepElement = document.createElement('p');
+                let colorClass = '';
+                if (step.type === 'call') {
+                    colorClass = 'call-step border-l-4 border-blue-400';
+                } else if (step.type === 'base') {
+                    colorClass = 'base-step border-l-4 border-yellow-400';
+                } else if (step.type === 'return') {
+                    colorClass = 'return-step border-l-4 border-blue-600';
+                }
+                stepElement.className = `log-entry p-1 rounded-md text-gray-700 ${colorClass}`;
+                stepElement.innerHTML = step.message;
+                logDiv.appendChild(stepElement);
+            });
+
+            logDiv.scrollTop = logDiv.scrollHeight; // Scroll to bottom
+        }
+
+
+        // --- 2. Fibonacci Recursion Logic (Memoization Comparison) ---
+
+        let fibStats = { naiveCalls: 0, memoizedCalls: 0, cache: {} };
+        let memo = {}; // Cache for memoized version
+
+        // Naive Recursive Fibonacci (O(2^n) time complexity)
+        function naiveFib(n) {
+            fibStats.naiveCalls++;
+            if (n <= 1) return n;
+            return naiveFib(n - 1) + naiveFib(n - 2);
+        }
+
+        // Memoized Recursive Fibonacci (O(n) time complexity)
+        function memoizedFib(n) {
+            fibStats.memoizedCalls++;
+            if (n in memo) {
+                return memo[n]; // Cache Hit
+            }
+            if (n <= 1) {
+                return n; // Base Case
+            }
+            
+            // Recursive Step
+            const result = memoizedFib(n - 1) + memoizedFib(n - 2);
+            
+            // Memoize (Store in Cache)
+            memo[n] = result;
+            return result;
+        }
+
+        function runFibonacciVisualization() {
+            const inputElement = document.getElementById('fib-input');
+            const n = parseInt(inputElement.value);
+            const resultDiv = document.getElementById('fib-result');
+            const naiveCallsDiv = document.getElementById('naive-calls');
+            const memoizedCallsDiv = document.getElementById('memoized-calls');
+            const cacheLogDiv = document.getElementById('fib-cache-log');
+
+            if (isNaN(n) || n < 1 || n > 40) {
+                resultDiv.innerHTML = `<span class="text-red-600">Please enter a number between 1 and 40.</span>`;
+                naiveCallsDiv.innerHTML = 'Naive Calls: 0';
+                memoizedCallsDiv.innerHTML = 'Memoized Calls: 0';
+                cacheLogDiv.innerHTML = '<p class="text-gray-500 italic">Cache cleared.</p>';
+                return;
+            }
+
+            // Reset stats and cache
+            fibStats = { naiveCalls: 0, memoizedCalls: 0, cache: {} };
+            memo = {};
+            
+            // --- Naive Calculation (Performance will be noticeably slow for N > 35) ---
+            const naiveStart = performance.now();
+            const naiveResult = naiveFib(n);
+            const naiveTime = (performance.now() - naiveStart).toFixed(2);
+
+            // --- Memoized Calculation (Always fast) ---
+            const memoStart = performance.now();
+            const memoizedResult = memoizedFib(n);
+            const memoTime = (performance.now() - memoStart).toFixed(2);
+            
+            // Update UI with results
+            resultDiv.innerHTML = `F(${n}) = <span class="text-green-600">${memoizedResult}</span>`;
+            naiveCallsDiv.innerHTML = `Naive Calls: <span class="font-bold text-red-700">${fibStats.naiveCalls.toLocaleString()}</span> (${naiveTime}ms)`;
+            memoizedCallsDiv.innerHTML = `Memoized Calls: <span class="font-bold text-blue-700">${fibStats.memoizedCalls.toLocaleString()}</span> (${memoTime}ms)`;
+
+            // Update Cache Log
+            cacheLogDiv.innerHTML = '';
+            const cacheKeys = Object.keys(memo).sort((a, b) => parseInt(a) - parseInt(b));
+
+            if (cacheKeys.length === 0) {
+                cacheLogDiv.innerHTML = '<p class="text-gray-500 italic">Cache is empty (N was 1 or 0).</p>';
+                return;
+            }
+
+            cacheKeys.forEach(key => {
+                const value = memo[key];
+                const item = document.createElement('p');
+                item.className = 'p-1 rounded-md bg-blue-50 border-l-4 border-blue-300';
+                item.innerHTML = `<span class="font-mono">F(${key}): ${value}</span>`;
+                cacheLogDiv.appendChild(item);
+            });
+        }
+    </script>
+
+</body>
+</html>
