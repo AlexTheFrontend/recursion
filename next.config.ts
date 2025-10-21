@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: '/',
-        destination: '/recursion.html',
+        destination: '/rc.html',
         permanent: true,
       },
     ];
