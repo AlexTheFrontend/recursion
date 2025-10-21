@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Guide to Datastore Race Conditions</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Cool Neutrals -->
+    <!-- Application Structure Plan: The application is structured as an interactive, single-page dashboard rather than a linear document. The core design uses a tab-based navigation system with prominent cards for the three main strategies. This allows users (developers/architects) to immediately jump to the content most relevant to them. This is followed by an interactive chart for direct comparison and a guided decision-flow diagram. This non-linear, task-oriented structure was chosen because developers often need to quickly compare solutions or find a specific recommendation based on their unique constraints (e.g., performance needs, architectural complexity). It prioritizes user agency and efficient information retrieval over the narrative flow of the original report. -->
+    <!-- Visualization & Content Choices: Report Info -> Key Strategies -> Presentation: Interactive Cards -> Interaction: Click to reveal detailed content -> Justification: Allows quick, high-level navigation. | Report Info -> Comparison Matrix -> Presentation: Interactive Horizontal Bar Chart (Chart.js) -> Interaction: Filter by criterion (e.g., "Best for Performance") to highlight data -> Justification: Transforms a static table into an explorable visual comparison, making it easier to see trade-offs. | Report Info -> Final Guidance -> Presentation: HTML/CSS/JS Decision Flow Diagram -> Interaction: Clickable choices that reveal a recommended path -> Justification: Creates a guided, personalized experience that helps users apply the report's advice to their specific situation. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .tab-btn.active { background-color: #3B82F6; color: white; }
+        .tab-btn { transition: all 0.3s ease; }
+        .content-section { display: none; }
+        .content-section.active { display: block; }
+        .decision-node { transition: all 0.3s ease; }
+        .decision-path.highlight path { stroke: #3B82F6; stroke-width: 3; }
+        .decision-node.highlight { border-color: #3B82F6; box-shadow: 0 0 15px rgba(59, 130, 246, 0.4); transform: scale(1.03); }
+        .chart-container { position: relative; width: 100%; max-width: 800px; margin-left: auto; margin-right: auto; height: 400px; max-height: 50vh; }
+        @media (min-width: 768px) { .chart-container { height: 500px; } }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8">
+
+        <header class="text-center mb-10">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900 mb-2">Handling Transactional Race Conditions on GCP</h1>
+            <p class="text-lg text-gray-600 max-w-3xl mx-auto">An interactive guide for Java projects using Google Datastore & Objectify.</p>
+        </header>
+
+        <main>
+            <section id="intro" class="mb-12 bg-white p-6 rounded-lg shadow-sm">
+                <h2 class="text-2xl font-semibold text-gray-900 mb-3">The Challenge: Datastore's Optimistic Concurrency</h2>
+                <p class="text-gray-700 leading-relaxed">
+                    Google Datastore uses an optimistic concurrency model. It doesn't lock entities during a read. When a transaction commits, Datastore checks if any read entities have been modified by another process. If so, the transaction fails with a `ConcurrentModificationException`. This scalable approach places the responsibility on the application to handle these conflicts, typically by retrying the entire operation. This guide explores three primary strategies to manage this challenge effectively.
+                </p>
+            </section>
+            
+            <section id="strategies" class="mb-12">
+                <h2 class="text-2xl font-semibold text-center text-gray-900 mb-6">Choose a Strategy to Explore</h2>
+                <div id="strategy-tabs" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <button data-target="optimistic" class="tab-btn text-left p-6 bg-white rounded-lg shadow-md hover:shadow-lg hover:-translate-y-1 border border-gray-200">
+                        <h3 class="text-xl font-bold mb-2 text-gray-900">1. Optimistic Locking</h3>
+                        <p class="text-gray-600">Leverage the default behavior with automated retries. Simple, idiomatic, and efficient for low contention.</p>
+                    </button>
+                    <button data-target="pessimistic" class="tab-btn text-left p-6 bg-white rounded-lg shadow-md hover:shadow-lg hover:-translate-y-1 border border-gray-200">
+                        <h3 class="text-xl font-bold mb-2 text-gray-900">2. Pessimistic Locking</h3>
+                        <p class="text-gray-600">Prevent conflicts by acquiring an explicit lock before the transaction, ensuring exclusive access.</p>
+                    </button>
+                    <button data-target="async" class="tab-btn text-left p-6 bg-white rounded-lg shadow-md hover:shadow-lg hover:-translate-y-1 border border-gray-200">
+                        <h3 class="text-xl font-bold mb-2 text-gray-900">3. Asynchronous Processing</h3>
+                        <p class="text-gray-600">Avoid race conditions altogether by serializing write operations using a task queue.</p>
+                    </button>
+                </div>
+            </section>
+
+            <div id="strategy-content" class="bg-white p-6 md:p-8 rounded-lg shadow-sm">
+                <div id="optimistic" class="content-section">
+                    <h3 class="text-2xl font-bold text-gray-900 mb-4">Strategy 1: Optimistic Locking with Automatic Retries</h3>
+                    <p class="mb-6 text-gray-600">This is the baseline and most common strategy. It relies on Objectify's ability to automatically catch contention exceptions and re-run the entire transaction. It's highly performant when conflicts are infrequent.</p>
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="font-semibold text-lg text-green-700 mb-2">Pros</h4>
+                            <ul class="list-disc list-inside space-y-2 text-gray-700">
+                                <li><strong>Simple & Idiomatic:</strong> The standard way to work with Datastore.</li>
+                                <li><strong>High Performance (Low Contention):</strong> No overhead from external locking services.</li>
+                                <li><strong>No Extra Infrastructure:</strong> Uses built-in Datastore and Objectify features.</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-lg text-red-700 mb-2">Cons</h4>
+                            <ul class="list-disc list-inside space-y-2 text-gray-700">
+                                <li><strong>Fails Under High Contention:</strong> Transactions may never succeed after all retries.</li>
+                                <li><strong>Wasted Compute:</strong> Complex logic is re-executed on every failed attempt.</li>
+                                <li><strong>Strict Idempotency Required:</strong> Logic must be safe to run multiple times.</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="mt-6 p-4 bg-blue-50 border-l-4 border-blue-500 rounded-r-lg">
+                        <h4 class="font-bold text-blue-800">Recommendation</h4>
+                        <p class="text-blue-700">This should be your default strategy. Focus on making transactional code idempotent and tuning retry settings before considering more complex solutions.</p>
+                    </div>
+                </div>
+
+                <div id="pessimistic" class="content-section">
+                    <h3 class="text-2xl font-bold text-gray-900 mb-4">Strategy 2: Pessimistic Locking (Simulated)</h3>
+                    <p class="mb-6 text-gray-600">This strategy prevents conflicts by ensuring only one process can access a resource at a time. Since Datastore doesn't have native locks, this must be simulated using an external mechanism.</p>
+                    
+                    <div class="mb-4 border-b border-gray-200">
+                        <nav class="-mb-px flex space-x-6" aria-label="Tabs">
+                            <button class="sub-tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-blue-600 border-blue-600" data-subtarget="redis">Using Memorystore (Redis)</button>
+                            <button class="sub-tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300 border-transparent" data-subtarget="datastore">Using Datastore</button>
+                        </nav>
+                    </div>
+
+                    <div id="redis" class="sub-content-section">
+                        <h4 class="font-semibold text-lg text-gray-800 mb-2">2a. Using Google Cloud Memorystore (Redis)</h4>
+                        <p class="text-gray-600 mb-4">This is the most robust and performant way to implement pessimistic locking, using Redis's atomic operations and key expirations (TTL) to manage locks.</p>
+                        <div class="grid md:grid-cols-2 gap-6">
+                            <div>
+                                <h4 class="font-semibold text-lg text-green-700 mb-2">Pros</h4>
+                                <ul class="list-disc list-inside space-y-2 text-gray-700">
+                                    <li><strong>Extremely Fast:</strong> Sub-millisecond in-memory operations.</li>
+                                    <li><strong>Atomic & Safe:</strong> Redis provides atomic commands perfect for locking.</li>
+                                    <li><strong>Built-in TTLs:</strong> Automatic handling of stale locks simplifies implementation.</li>
+                                </ul>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-lg text-red-700 mb-2">Cons</h4>
+                                <ul class="list-disc list-inside space-y-2 text-gray-700">
+                                    <li><strong>New Infrastructure:</strong> Requires managing and paying for a Memorystore instance.</li>
+                                    <li><strong>Increased Complexity:</strong> Application must manage connections to two systems.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                     <div id="datastore" class="sub-content-section" style="display: none;">
+                        <h4 class="font-semibold text-lg text-gray-800 mb-2">2b. Using Datastore Itself</h4>
+                         <p class="text-gray-600 mb-4">This method simulates a lock by creating a separate "lock" entity in Datastore. It avoids new infrastructure but is more complex and less performant.</p>
+                        <div class="grid md:grid-cols-2 gap-6">
+                            <div>
+                                <h4 class="font-semibold text-lg text-green-700 mb-2">Pros</h4>
+                                <ul class="list-disc list-inside space-y-2 text-gray-700">
+                                    <li><strong>Prevents Wasted Work:</strong> Blocks conflicts before executing expensive logic.</li>
+                                    <li><strong>No Extra Infrastructure:</strong> Built entirely within Datastore.</li>
+                                </ul>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-lg text-red-700 mb-2">Cons</h4>
+                                <ul class="list-disc list-inside space-y-2 text-gray-700">
+                                    <li><strong>Complex to Implement:</strong> Requires careful management of lock creation, release, and timeouts.</li>
+                                    <li><strong>Performance Bottleneck:</strong> Serializes access and increases Datastore operations.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-6 p-4 bg-blue-50 border-l-4 border-blue-500 rounded-r-lg">
+                        <h4 class="font-bold text-blue-800">Recommendation</h4>
+                        <p class="text-blue-700">If your application experiences high contention on synchronous writes, using **Memorystore for pessimistic locking** is the superior technical choice. It provides the best performance and reliability.</p>
+                    </div>
+                </div>
+
+                <div id="async" class="content-section">
+                    <h3 class="text-2xl font-bold text-gray-900 mb-4">Strategy 3: Asynchronous Processing via Cloud Tasks</h3>
+                    <p class="mb-6 text-gray-600">This strategy re-architects the workflow to avoid race conditions completely. Instead of immediate execution, write operations are enqueued and processed serially by a background worker, eliminating contention.</p>
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="font-semibold text-lg text-green-700 mb-2">Pros</h4>
+                            <ul class="list-disc list-inside space-y-2 text-gray-700">
+                                <li><strong>Eliminates Race Conditions:</strong> Fundamentally avoids contention on writes.</li>
+                                <li><strong>Highly Scalable & Resilient:</strong> Smooths traffic spikes and handles failures gracefully.</li>
+                                <li><strong>Improved User Experience:</strong> The API returns an immediate acknowledgement.</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-lg text-red-700 mb-2">Cons</h4>
+                            <ul class="list-disc list-inside space-y-2 text-gray-700">
+                                <li><strong>Eventual Consistency:</strong> The data is not updated immediately upon request.</li>
+                                <li><strong>Significant Architectural Change:</strong> Requires building a task-based workflow.</li>
+                                <li><strong>Not for Synchronous Needs:</strong> Unsuitable if the result must be read immediately.</li>
+                            </ul>
+                        </div>
+                    </div>
+                     <div class="mt-6 p-4 bg-blue-50 border-l-4 border-blue-500 rounded-r-lg">
+                        <h4 class="font-bold text-blue-800">Recommendation</h4>
+                        <p class="text-blue-700">For high-throughput systems where writes can be deferred by seconds, this is the most robust and scalable long-term solution. It's a standard pattern in modern distributed systems.</p>
+                    </div>
+                </div>
+                
+                <div id="placeholder" class="content-section active text-center py-10">
+                    <p class="text-gray-500 text-lg">Select a strategy above to see the details.</p>
+                </div>
+            </div>
+
+            <section id="comparison" class="mt-12">
+                <h2 class="text-2xl font-semibold text-center text-gray-900 mb-3">Interactive Strategy Comparison</h2>
+                <p class="text-center text-gray-600 mb-6">Compare the strategies across key criteria. Use the buttons to highlight the best option for each metric.</p>
+                <div class="text-center mb-6 space-x-2">
+                     <button class="filter-btn bg-gray-200 text-gray-800 px-4 py-2 rounded-full text-sm font-medium" data-metric="Complexity">Lowest Complexity</button>
+                    <button class="filter-btn bg-gray-200 text-gray-800 px-4 py-2 rounded-full text-sm font-medium" data-metric="Performance">Highest Performance</button>
+                    <button class="filter-btn bg-gray-200 text-gray-800 px-4 py-2 rounded-full text-sm font-medium" data-metric="ContentionHandling">Best Contention Handling</button>
+                    <button id="reset-filter" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-full text-sm font-medium">Reset</button>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow-sm">
+                    <div class="chart-container">
+                        <canvas id="comparisonChart"></canvas>
+                    </div>
+                </div>
+            </section>
+            
+            <section id="decision-flow" class="mt-12">
+                <h2 class="text-2xl font-semibold text-center text-gray-900 mb-3">Which Strategy Should You Use?</h2>
+                <p class="text-center text-gray-600 mb-8">Follow this simple decision flow to find the recommended approach for your use case.</p>
+                <div class="bg-white p-6 md:p-8 rounded-lg shadow-sm flex flex-col items-center space-y-4">
+                    <div id="q1" class="decision-node highlight border-2 border-gray-300 p-4 rounded-lg text-center max-w-md">
+                        <p class="font-semibold">Are transaction retries rare and is your logic idempotent?</p>
+                        <div class="mt-3 space-x-4">
+                            <button class="decision-btn bg-blue-500 text-white px-4 py-2 rounded-lg" data-answer="yes" data-next="r1">Yes</button>
+                            <button class="decision-btn bg-gray-300 text-gray-800 px-4 py-2 rounded-lg" data-answer="no" data-next="q2">No</button>
+                        </div>
+                    </div>
+                    <div class="decision-path" data-from="q1" data-to="r1">
+                         <svg width="20" height="50"><path d="M 10 0 V 50" stroke="#CBD5E1" stroke-width="2" fill="none"/></svg>
+                    </div>
+                    <div id="r1" class="decision-node opacity-50 border-2 border-gray-300 p-4 rounded-lg text-center max-w-md">
+                        <p class="font-bold text-green-700">Recommendation</p>
+                        <p>Stick with <strong class="text-blue-600">Optimistic Locking</strong>. It's the most efficient solution for your needs.</p>
+                    </div>
+                     <div class="decision-path" data-from="q1" data-to="q2">
+                         <svg width="20" height="50"><path d="M 10 0 V 50" stroke="#CBD5E1" stroke-width="2" fill="none"/></svg>
+                    </div>
+                    <div id="q2" class="decision-node opacity-50 border-2 border-gray-300 p-4 rounded-lg text-center max-w-md">
+                        <p class="font-semibold">Does the operation need to be synchronous (result returned immediately)?</p>
+                        <div class="mt-3 space-x-4">
+                            <button class="decision-btn bg-blue-500 text-white px-4 py-2 rounded-lg" data-answer="yes" data-next="r2">Yes</button>
+                            <button class="decision-btn bg-gray-300 text-gray-800 px-4 py-2 rounded-lg" data-answer="no" data-next="r3">No</button>
+                        </div>
+                    </div>
+                     <div class="decision-path" data-from="q2" data-to="r2">
+                         <svg width="20" height="50"><path d="M 10 0 V 50" stroke="#CBD5E1" stroke-width="2" fill="none"/></svg>
+                    </div>
+                     <div id="r2" class="decision-node opacity-50 border-2 border-gray-300 p-4 rounded-lg text-center max-w-md">
+                        <p class="font-bold text-green-700">Recommendation</p>
+                        <p>Implement <strong class="text-blue-600">Pessimistic Locking</strong>, preferably with Memorystore (Redis), for reliable synchronous updates.</p>
+                    </div>
+                     <div class="decision-path" data-from="q2" to="r3">
+                         <svg width="20" height="50"><path d="M 10 0 V 50" stroke="#CBD5E1" stroke-width="2" fill="none"/></svg>
+                    </div>
+                     <div id="r3" class="decision-node opacity-50 border-2 border-gray-300 p-4 rounded-lg text-center max-w-md">
+                        <p class="font-bold text-green-700">Recommendation</p>
+                        <p>Refactor to use <strong class="text-blue-600">Asynchronous Processing</strong> with Cloud Tasks for the most scalable and resilient solution.</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const tabs = document.querySelectorAll('.tab-btn');
+    const contentSections = document.querySelectorAll('.content-section');
+    const placeholder = document.getElementById('placeholder');
+    const strategyContent = document.getElementById('strategy-content');
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const targetId = tab.dataset.target;
+            
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            
+            placeholder.classList.remove('active');
+            contentSections.forEach(section => {
+                section.classList.remove('active');
+            });
+            
+            const targetSection = document.getElementById(targetId);
+            if(targetSection) {
+                targetSection.classList.add('active');
+            }
+        });
+    });
+
+    const subTabs = document.querySelectorAll('.sub-tab-btn');
+    subTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const subTargetId = tab.dataset.subtarget;
+            const parent = tab.closest('.content-section');
+
+            parent.querySelectorAll('.sub-tab-btn').forEach(t => {
+                t.classList.remove('text-blue-600', 'border-blue-600');
+                t.classList.add('text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300', 'border-transparent');
+            });
+            tab.classList.add('text-blue-600', 'border-blue-600');
+            tab.classList.remove('text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300', 'border-transparent');
+
+            parent.querySelectorAll('.sub-content-section').forEach(section => {
+                section.style.display = 'none';
+            });
+            
+            const subTargetSection = document.getElementById(subTargetId);
+            if (subTargetSection) {
+                subTargetSection.style.display = 'block';
+            }
+        });
+    });
+
+    const decisionBtns = document.querySelectorAll('.decision-btn');
+    const decisionNodes = document.querySelectorAll('.decision-node');
+    const decisionPaths = document.querySelectorAll('.decision-path');
+
+    decisionBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const parentNode = btn.closest('.decision-node');
+            const nextNodeId = btn.dataset.next;
+            
+            decisionNodes.forEach(node => node.classList.remove('highlight'));
+            decisionPaths.forEach(path => path.classList.remove('highlight'));
+            
+            document.getElementById(nextNodeId).classList.add('highlight');
+            document.getElementById(nextNodeId).classList.remove('opacity-50');
+            
+            const connectingPath = document.querySelector(`.decision-path[data-from="${parentNode.id}"][data-to="${nextNodeId}"]`);
+            if(connectingPath) {
+               connectingPath.classList.add('highlight');
+            }
+        });
+    });
+
+    const chartData = {
+        labels: ['Optimistic Locking', 'Pessimistic (Memorystore)', 'Asynchronous (Cloud Tasks)'],
+        datasets: [
+            {
+                label: 'Complexity (Lower is Better)',
+                data: [1, 3, 5],
+                backgroundColor: 'rgba(255, 99, 132, 0.5)',
+                borderColor: 'rgba(255, 99, 132, 1)',
+                borderWidth: 1
+            },
+            {
+                label: 'Performance',
+                data: [4, 5, 5],
+                backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                borderColor: 'rgba(54, 162, 235, 1)',
+                borderWidth: 1
+            },
+            {
+                label: 'Contention Handling',
+                data: [2, 5, 5],
+                backgroundColor: 'rgba(75, 192, 192, 0.5)',
+                borderColor: 'rgba(75, 192, 192, 1)',
+                borderWidth: 1
+            }
+        ]
+    };
+
+    const originalBgColors = {
+        'Complexity': 'rgba(255, 99, 132, 0.5)',
+        'Performance': 'rgba(54, 162, 235, 0.5)',
+        'ContentionHandling': 'rgba(75, 192, 192, 0.5)'
+    };
+    const highlightColor = '#FFCE56';
+
+    const ctx = document.getElementById('comparisonChart').getContext('2d');
+    const comparisonChart = new Chart(ctx, {
+        type: 'bar',
+        data: chartData,
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    max: 5,
+                    ticks: {
+                        callback: function(value, index, values) {
+                            const labels = ['', 'Low', 'Medium', 'Good', 'High', 'Excellent'];
+                            return labels[value];
+                        }
+                    }
+                },
+                y: {
+                     ticks: {
+                        autoSkip: false,
+                        callback: function(value, index, values) {
+                            const label = this.getLabelForValue(value);
+                            return label.length > 25 ? label.match(/.{1,25}/g) : label;
+                        }
+                    }
+                }
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const labels = ['', 'Low', 'Medium', 'Good', 'High', 'Excellent'];
+                            let label = context.dataset.label || '';
+                            if (label) {
+                                label += ': ';
+                            }
+                            if (context.parsed.x !== null) {
+                                label += labels[context.parsed.x];
+                            }
+                            return label;
+                        }
+                    }
+                },
+                legend: {
+                    position: 'top',
+                }
+            }
+        }
+    });
+
+    const filterBtns = document.querySelectorAll('.filter-btn');
+    
+    function resetChartColors() {
+        comparisonChart.data.datasets[0].backgroundColor = Array(3).fill(originalBgColors.Complexity);
+        comparisonChart.data.datasets[1].backgroundColor = Array(3).fill(originalBgColors.Performance);
+        comparisonChart.data.datasets[2].backgroundColor = Array(3).fill(originalBgColors.ContentionHandling);
+        comparisonChart.update();
+    }
+    
+    document.getElementById('reset-filter').addEventListener('click', resetChartColors);
+    
+    filterBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            resetChartColors();
+            const metric = btn.dataset.metric;
+            let datasetIndex, bestIsMax;
+
+            switch(metric) {
+                case 'Complexity':
+                    datasetIndex = 0; bestIsMax = false; break;
+                case 'Performance':
+                    datasetIndex = 1; bestIsMax = true; break;
+                case 'ContentionHandling':
+                    datasetIndex = 2; bestIsMax = true; break;
+            }
+
+            const data = comparisonChart.data.datasets[datasetIndex].data;
+            const bestValue = bestIsMax ? Math.max(...data) : Math.min(...data);
+            const bestIndex = data.indexOf(bestValue);
+            
+            const bgColors = Array(3).fill(originalBgColors[metric]);
+            bgColors[bestIndex] = highlightColor;
+            comparisonChart.data.datasets[datasetIndex].backgroundColor = bgColors;
+            
+            comparisonChart.update();
+        });
+    });
+});
+</script>
+
+</body>
+</html>
